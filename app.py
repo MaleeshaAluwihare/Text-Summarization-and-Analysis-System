@@ -8,13 +8,16 @@ from transformers import pipeline
 from transformers import BertModel
 import torch.nn as nn
 import torch
-import base64
+import os
 import streamlit as st
 from transformers import BartTokenizer, BartForConditionalGeneration, AutoModelForSequenceClassification, AutoTokenizer
 from Custom_Sentiment_model import BertForMultiTask
 from pymongo import MongoClient
 import bcrypt
 import uuid
+from dotenv import load_dotenv
+
+load_dotenv()
 
 #dialog model directory
 bart_samsum = 'BART_Finetuned'
@@ -59,7 +62,8 @@ def predict_sentiment_and_type(text):
     return sentiment_pred, article_pred
 
 #MongoDBConnection
-client = MongoClient("mongodb+srv://malshaconline:0216y0i6wyrScneu@summarization.gnxkc.mongodb.net/")
+mongodb_uri = os.getenv("MONGODB_URI")
+client = MongoClient(mongodb_uri)
 db = client.TextSummarization
 users_collection = db.Users
 history_collection = db.UserHistory
