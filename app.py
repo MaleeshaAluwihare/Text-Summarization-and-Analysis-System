@@ -23,16 +23,14 @@ load_dotenv()
 bart_samsum = 'BART_Finetuned'
 sentiment = 'Sentimental_Bestmodel'
 
-# Initialize the custom model
-model = BertForMultiTask('bert-base-uncased', num_sentiment_labels=3, num_article_labels=7)
-
 # Load models
 dialog_model = BartForConditionalGeneration.from_pretrained(bart_samsum)
 health_model = BartForConditionalGeneration.from_pretrained(bart_samsum)
 legal_model = BartForConditionalGeneration.from_pretrained(bart_samsum)
 
 # Create an instance of the custom model
-sentiment_model = BertForMultiTask('bert-base-uncased', num_sentiment_labels=3, num_article_labels=7)
+# sentiment_model = BertForMultiTask('bert-base-uncased', num_sentiment_labels=3, num_article_labels=7)
+sentiment_model = torch.load("Sentimental_Bestmodel/Sentiment_model.pth", map_location=torch.device('cpu'))
 topic_model = AutoModelForSequenceClassification.from_pretrained(bart_samsum)
 
 # Tokenizers
@@ -40,8 +38,6 @@ tokenizer = BartTokenizer.from_pretrained(bart_samsum)
 sentiment_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 topic_tokenizer = AutoTokenizer.from_pretrained(bart_samsum)
 
-# Load the trained model weights
-sentiment_model = torch.load("Sentimental_Bestmodel/Sentiment_model.pth", map_location=torch.device('cpu'))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 sentiment_model.to(device)
@@ -160,22 +156,23 @@ def summrization_page():
         log_user_history(st.session_state.user_id,paragraph,summary)
         st.success(summary)
 
-        display_user_history(st.session_state.user_id)
-
-    # Perform additional options if selected
-    if "Sentiment Analysis" in options:
-        if st.button("Analyze Sentiment"):
+        # Perform additional options if selected
+        if "Sentiment Analysis" in options:
             sentiment, article_type = predict_sentiment_and_type(paragraph)
             st.write(f"Sentiment: {sentiment}")
             st.write(f"Article Type: {article_type}")
 
-    if "Topic Generation" in options:
-        if st.button("Generate Topic"):
+        if "Topic Generation" in options:
             inputs = topic_tokenizer(paragraph, return_tensors="pt")
             topic_logits = topic_model(**inputs).logits
             topic = topic_logits.argmax(dim=-1).item()
             topic_labels = {0: 'Business', 1: 'Entertainment', 2: 'General', 3: 'Health', 4: 'Science', 5: 'Sports', 6: 'Technology'}
             st.write("**Topic:**", topic_labels[topic])
+
+        # if "Word Extraction" in options:
+
+
+    display_user_history(st.session_state.user_id)  
 
 if __name__ == "__main__":
     main()
