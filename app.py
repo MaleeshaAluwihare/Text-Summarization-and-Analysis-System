@@ -2,16 +2,12 @@ from transformers import BartTokenizer, BartForConditionalGeneration
 from transformers import BertTokenizer, BertForSequenceClassification
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from transformers import pipeline
-# from langchain.text_splitter import RecursiveCharacterTextSplitter
-# from langchain.document_loaders import PyPDFLoader,DirectoryLoader
-# from langchain.chains.summarize import load_summarize_chain
-from transformers import BertModel
-import torch.nn as nn
 import torch
 import os
 import streamlit as st
 from transformers import BartTokenizer, BartForConditionalGeneration, AutoModelForSequenceClassification, AutoTokenizer
 from Custom_Sentiment_model import BertForMultiTask
+from Keyword_extraction import extract_keywords
 from pymongo import MongoClient
 import bcrypt
 import uuid
@@ -23,21 +19,42 @@ load_dotenv()
 bart_samsum = 'BART_Finetuned'
 sentiment = 'Sentimental_Bestmodel'
 
-# Load models
-dialog_model = BartForConditionalGeneration.from_pretrained(bart_samsum)
-health_model = BartForConditionalGeneration.from_pretrained(bart_samsum)
-legal_model = BartForConditionalGeneration.from_pretrained(bart_samsum)
+# Cache the loading of models to reduce time
+@st.cache_resource
+def load_dialog_model():
+    return BartForConditionalGeneration.from_pretrained(bart_samsum)
 
-# Create an instance of the custom model
-# sentiment_model = BertForMultiTask('bert-base-uncased', num_sentiment_labels=3, num_article_labels=7)
-sentiment_model = torch.load("Sentimental_Bestmodel/Sentiment_model.pth", map_location=torch.device('cpu'))
-topic_model = AutoModelForSequenceClassification.from_pretrained(bart_samsum)
+@st.cache_resource
+def load_health_model():
+    return BartForConditionalGeneration.from_pretrained(bart_samsum)
 
-# Tokenizers
-tokenizer = BartTokenizer.from_pretrained(bart_samsum)
-sentiment_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-topic_tokenizer = AutoTokenizer.from_pretrained(bart_samsum)
+@st.cache_resource
+def load_legal_model():
+    return BartForConditionalGeneration.from_pretrained(bart_samsum)
 
+@st.cache_resource
+def load_sentiment_model():
+    model = torch.load("Sentimental_Bestmodel/Sentiment_model.pth", map_location=torch.device('cpu'))
+    return model
+
+@st.cache_resource
+def load_topic_model():
+    return AutoModelForSequenceClassification.from_pretrained('BART_Finetuned')
+
+@st.cache_resource
+def load_tokenizers():
+    bart_tokenizer = BartTokenizer.from_pretrained('BART_Finetuned')
+    sentiment_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+    topic_tokenizer = AutoTokenizer.from_pretrained('BART_Finetuned')
+    return bart_tokenizer, sentiment_tokenizer, topic_tokenizer
+
+# Load models and tokenizers
+dialog_model = load_dialog_model()
+health_model = load_health_model()
+legal_model = load_legal_model()
+sentiment_model = load_sentiment_model()
+topic_model = load_topic_model()
+bart_tokenizer, sentiment_tokenizer, topic_tokenizer = load_tokenizers()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 sentiment_model.to(device)
@@ -110,11 +127,16 @@ def login():
 #display user history
 def display_user_history(user_id):
     st.subheader("Your Summarization History")
-    history = history_collection.find({"user_id": user_id})
-    for record in history:
-        st.write(f"Text: {record['text']}")
-        st.write(f"Summary: {record['summary']}")
-        st.markdown('---')
+    history = list(history_collection.find({"user_id": user_id}))
+    
+    if len(history) == 0:
+        st.info("It looks like you haven't summarized any text yet. Start by entering some text and creating your first summary!")
+    else:
+        for record in history:
+            st.write(f"**Text**: {record['text']}")
+            st.write(f"**Summary**: {record['summary']}")
+            st.markdown('---')
+
 
 def main():
     st.sidebar.title("Navigation")
@@ -129,6 +151,9 @@ def main():
 
 
 def summrization_page():
+
+    st.title(f"Welcome {st.session_state.username}")
+    st.markdown('---')
     st.title("Text Summarization and Analysis")
 
     # Select paragraph type
@@ -145,33 +170,67 @@ def summrization_page():
         selected_model = dialog_model
     elif paragraph_type == "Health":
         selected_model = health_model
+    elif paragraph_type == "Artical":
+        selected_model = dialog_model
     else:
         selected_model = legal_model
 
     # Summarization button
     if st.button("Summarize"):
-        inputs = tokenizer(paragraph, return_tensors="pt", max_length=512, truncation=True)
+        st.markdown("### Summary:")
+
+        inputs = bart_tokenizer(paragraph, return_tensors="pt", max_length=512, truncation=True)
         summary_ids = selected_model.generate(inputs['input_ids'], num_beams=4, max_length=100, early_stopping=True)
-        summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+        summary = bart_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
         log_user_history(st.session_state.user_id,paragraph,summary)
         st.success(summary)
 
+        st.markdown('---')
         # Perform additional options if selected
         if "Sentiment Analysis" in options:
+            st.markdown("### Sentiment Analysis:")
+            
             sentiment, article_type = predict_sentiment_and_type(paragraph)
-            st.write(f"Sentiment: {sentiment}")
-            st.write(f"Article Type: {article_type}")
+            sentiment_labels = ['Negative', 'Neutral', 'Positive']
+            article_labels = ['Business', 'Entertainment', 'General', 'Health', 'Science', 'Sports', 'Technology']
+            
+            sentiment_display = f"""
+                <div style='background-color:#f1f1f1; color:black; padding:8px 15px; border-radius:25px; display:inline-block; margin-right: 10px; margin-bottom: 10px;'>
+                    Sentiment: {sentiment_labels[sentiment]}
+                </div>
+            """
+            article_display = f"""
+                <div style='background-color:#f1f1f1; color:black; padding:8px 15px; border-radius:25px; display:inline-block;'>
+                    Article Type: {article_labels[article_type]}
+                </div>
+            """
+            st.markdown(sentiment_display, unsafe_allow_html=True)
+            st.markdown(article_display, unsafe_allow_html=True)
+
 
         if "Topic Generation" in options:
+            st.markdown("### Generated Topics:")
+
             inputs = topic_tokenizer(paragraph, return_tensors="pt")
             topic_logits = topic_model(**inputs).logits
             topic = topic_logits.argmax(dim=-1).item()
             topic_labels = {0: 'Business', 1: 'Entertainment', 2: 'General', 3: 'Health', 4: 'Science', 5: 'Sports', 6: 'Technology'}
             st.write("**Topic:**", topic_labels[topic])
 
-        # if "Word Extraction" in options:
+        if "Word Extraction" in options:
+            st.markdown('---')
+            st.markdown("### Extracted Keywords:")
+
+            keywords = extract_keywords(paragraph)
+            num_keywords = len(keywords)
+            columns = st.columns(min(6, num_keywords))
+            
+            for i, keyword in enumerate(keywords):
+                with columns[i % 6]:
+                    st.markdown(f"<div style='background-color:#f1f1f1; color:black; padding:8px 15px; border-radius:25px; display:inline-block; margin-bottom: 10px;'>{keyword}</div>", unsafe_allow_html=True)
 
 
+    st.markdown('---')
     display_user_history(st.session_state.user_id)  
 
 if __name__ == "__main__":
