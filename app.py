@@ -12,6 +12,9 @@ from pymongo import MongoClient
 import bcrypt
 import uuid
 from dotenv import load_dotenv
+import PyPDF2 
+import docx2txt
+from datetime import datetime
 
 load_dotenv()
 
@@ -87,7 +90,7 @@ def create_user(username, password):
     user_id = str(uuid.uuid4()) 
     users_collection.insert_one({"username": username, "password": hashed_password, "user_id": user_id})
 
-#check if user exists
+#check if user exists for session
 def check_user(username, password):
     user = users_collection.find_one({"username": username})
     if user and bcrypt.checkpw(password.encode('utf-8'), user['password']):
@@ -96,20 +99,45 @@ def check_user(username, password):
 
 #store user history
 def log_user_history(user_id, text, summary):
-    history_collection.insert_one({"user_id": user_id, "text": text, "summary": summary})
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-#User registration
-def register():
-    st.title("Register")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type='password')
+    history_collection.insert_one({"user_id": user_id, "text": text, "summary": summary,"created_at": current_time})
+
+
+# Display user history
+def display_user_history(user_id):
+    st.subheader("Your Summarization History")
+    history = list(history_collection.find({"user_id": user_id}).sort("created_at", -1))
     
-    if st.button("Create Account"):
-        create_user(username, password)
-        st.success(f"Account created successfully!")
+    if len(history) == 0:
+        st.info("It looks like you haven't summarized any text yet. Start by entering some text and creating your first summary!")
+    else:
+        for record in history:
+            st.markdown(f"**Date**: {record['created_at']}")
+            with st.expander(f"**Summary**: {record['summary']}"):
+                st.markdown(f"**Text**: {record['text']}")
 
-# User login
+
+# check if username already exists
+def check_user_exists(username):
+    if users_collection.find_one({"username": username}):
+        return True
+    return False
+
 def login():
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background-image: url("https://raw.githubusercontent.com/MaleeshaAluwihare/Text-Summarization-and-Analysis-System/main/Image/ai-text-summarizer.png");
+            background-size: cover;
+            background-position: center;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     st.title("Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type='password')
@@ -124,46 +152,118 @@ def login():
         else:
             st.error("Invalid username or password.")
 
-#display user history
-def display_user_history(user_id):
-    st.subheader("Your Summarization History")
-    history = list(history_collection.find({"user_id": user_id}))
+def register():
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background-image: url("https://raw.githubusercontent.com/MaleeshaAluwihare/Text-Summarization-and-Analysis-System/main/Image/ai-text-summarizer.png");
+            background-size: cover;
+            background-position: center;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    st.title("Create Account")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type='password')
     
-    if len(history) == 0:
-        st.info("It looks like you haven't summarized any text yet. Start by entering some text and creating your first summary!")
-    else:
-        for record in history:
-            st.write(f"**Text**: {record['text']}")
-            st.write(f"**Summary**: {record['summary']}")
-            st.markdown('---')
+    if st.button("Create Account"):
+        if check_user_exists(username):
+            st.error("Username already exists! Please choose a different username.")
+        else:
+            create_user(username, password)
+            st.success(f"Account created successfully!")
 
+def summarization_page():
+    summarization_page()
 
 def main():
-    st.sidebar.title("Navigation")
-    choice = st.sidebar.radio("Go to",["Login","Register"])
+    st.sidebar.title("📋 Welcome to Summarizer!")
+    st.sidebar.write("Choose an option to continue:")
+    
+    choice = st.sidebar.radio(
+        "Go to",
+        ["🔑 Login", "🙎 Register"]
+    )
+    st.sidebar.markdown("---") 
 
-    if choice == "Register":
-        register()
     if 'user_id' in st.session_state:
+        st.sidebar.success(f"Welcome, {st.session_state['username']}!")
+        if st.sidebar.button("🔓 Log Out"):
+            del st.session_state['user_id']
+            del st.session_state['username']
+            st.rerun()
         summrization_page()
-    elif choice == "Login":
-        login()
+    else:
+        if choice == "🙎 Register":
+            register()
+        elif choice == "🔑 Login":
+            login()
 
+# Document read
+def read_pdf(file):
+    reader = PyPDF2.PdfReader(file)
+    text = ""
+    for page in range(len(reader.pages)):
+        text += reader.pages[page].extract_text()
+    return text
+
+def read_txt(file):
+    return file.read().decode("utf-8")
+
+def read_docx(file):
+    return docx2txt.process(file)
 
 def summrization_page():
-
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background-color: #2e3785;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
     st.title(f"Welcome {st.session_state.username}")
     st.markdown('---')
     st.title("Text Summarization and Analysis")
 
     # Select paragraph type
-    paragraph_type = st.selectbox("Select Paragraph Type", ("Dialog", "Health", "Legal", "Artical"))
+    paragraph_type = st.selectbox("Select Paragraph Type📄", ("Dialog", "Health", "Legal", "Artical"))
 
-    # Input paragraph
-    paragraph = st.text_area(label="Enter the paragraph")
+    input_method = None
+
+    # If text is entered, disable file upload
+    paragraph = st.text_area(label="Enter the paragraph📝", disabled=st.session_state.get('file_uploaded', False))
+
+    uploaded_file = st.file_uploader("Upload a document (TXT, PDF, DOCX)", type=["txt", "pdf", "docx"], disabled=st.session_state.get('text_entered', False))
+
+
+  # Handle text input action
+    if paragraph and not st.session_state.get('text_entered', False):
+        st.session_state['text_entered'] = True
+        st.session_state['file_uploaded'] = False
+
+    # Handle file upload action
+    if uploaded_file and not st.session_state.get('file_uploaded', False):
+        st.session_state['file_uploaded'] = True
+        st.session_state['text_entered'] = False
+        if uploaded_file.type == "text/plain":
+            text = read_txt(uploaded_file)
+        elif uploaded_file.type == "application/pdf":
+            text = read_pdf(uploaded_file)
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            text = read_docx(uploaded_file)
+        else:
+            st.error("Unsupported file format")
+        paragraph = text
+
 
     # Options for additional processing
-    options = st.multiselect("Additional Options", ["Topic Generation", "Sentiment Analysis", "Word Extraction"])
+    options = st.multiselect("Additional Options🔗", ["Topic Generation", "Sentiment Analysis", "Word Extraction"])
 
     # Load appropriate model based on the paragraph type
     if paragraph_type == "Dialog":
@@ -175,6 +275,16 @@ def summrization_page():
     else:
         selected_model = legal_model
 
+    if uploaded_file is not None:
+        if uploaded_file.type == "text/plain":
+            paragraph = read_txt(uploaded_file)
+        elif uploaded_file.type == "application/pdf":
+            paragraph = read_pdf(uploaded_file)
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            paragraph = read_docx(uploaded_file)
+        else:
+            st.error("Unsupported file format")
+
     # Summarization button
     if st.button("Summarize"):
         st.markdown("### Summary:")
@@ -185,9 +295,9 @@ def summrization_page():
         log_user_history(st.session_state.user_id,paragraph,summary)
         st.success(summary)
 
-        st.markdown('---')
         # Perform additional options if selected
         if "Sentiment Analysis" in options:
+            st.markdown('---')
             st.markdown("### Sentiment Analysis:")
             
             sentiment, article_type = predict_sentiment_and_type(paragraph)
@@ -234,4 +344,8 @@ def summrization_page():
     display_user_history(st.session_state.user_id)  
 
 if __name__ == "__main__":
+    if 'text_entered' not in st.session_state:
+        st.session_state['text_entered'] = False
+    if 'file_uploaded' not in st.session_state:
+        st.session_state['file_uploaded'] = False
     main()
