@@ -8,6 +8,7 @@ import streamlit as st
 from transformers import BartTokenizer, BartForConditionalGeneration, AutoModelForSequenceClassification, AutoTokenizer
 from Custom_Sentiment_model import BertForMultiTask
 from Keyword_extraction import extract_keywords
+from topicExtract import extract_topics_from_summary
 from pymongo import MongoClient
 import bcrypt
 import uuid
@@ -15,11 +16,14 @@ from dotenv import load_dotenv
 import PyPDF2 
 import docx2txt
 from datetime import datetime
+from streamlit_lottie import st_lottie
+import json
 
 load_dotenv()
 
 #dialog model directory
 bart_samsum = 'BART_Finetuned'
+bart_medical = 'BART_Finetuned_Medical'
 sentiment = 'Sentimental_Bestmodel'
 
 # Cache the loading of models to reduce time
@@ -29,7 +33,7 @@ def load_dialog_model():
 
 @st.cache_resource
 def load_health_model():
-    return BartForConditionalGeneration.from_pretrained(bart_samsum)
+    return BartForConditionalGeneration.from_pretrained(bart_medical)
 
 @st.cache_resource
 def load_legal_model():
@@ -77,6 +81,11 @@ def predict_sentiment_and_type(text):
     
     return sentiment_pred, article_pred
 
+# Function to load Lottie animation from a file
+def load_lottiefile(filepath: str):
+    with open(filepath, "r") as f:
+        return json.load(f)
+    
 #MongoDBConnection
 mongodb_uri = os.getenv("MONGODB_URI")
 client = MongoClient(mongodb_uri)
@@ -227,7 +236,7 @@ def summrization_page():
         """,
         unsafe_allow_html=True
     )
-    st.title(f"Welcome {st.session_state.username}")
+    st.title(f"Welcome {st.session_state.username} 👋")
     st.markdown('---')
     st.title("Text Summarization and Analysis")
 
@@ -285,14 +294,22 @@ def summrization_page():
         else:
             st.error("Unsupported file format")
 
+    lottie_animation = load_lottiefile(r"Animation\loading.json")
+
     # Summarization button
     if st.button("Summarize"):
-        st.markdown("### Summary:")
+
+        lottie_placeholder = st.empty()
+        st_lottie(lottie_animation, loop=True, key="loading")
 
         inputs = bart_tokenizer(paragraph, return_tensors="pt", max_length=512, truncation=True)
         summary_ids = selected_model.generate(inputs['input_ids'], num_beams=4, max_length=100, early_stopping=True)
         summary = bart_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
         log_user_history(st.session_state.user_id,paragraph,summary)
+
+        lottie_placeholder.empty()
+
+        st.markdown("### Summary:")
         st.success(summary)
 
         # Perform additional options if selected
@@ -319,25 +336,36 @@ def summrization_page():
 
 
         if "Topic Generation" in options:
+            st.markdown('---')
             st.markdown("### Generated Topics:")
 
-            inputs = topic_tokenizer(paragraph, return_tensors="pt")
-            topic_logits = topic_model(**inputs).logits
-            topic = topic_logits.argmax(dim=-1).item()
-            topic_labels = {0: 'Business', 1: 'Entertainment', 2: 'General', 3: 'Health', 4: 'Science', 5: 'Sports', 6: 'Technology'}
-            st.write("**Topic:**", topic_labels[topic])
+            topics = extract_topics_from_summary(paragraph)
+
+            cleaned_topics = []
+            for topic in topics:
+                words = [item.split('*')[1].replace('"', '').strip() for item in topic.split('+')]
+                cleaned_topics.append(words) 
+            
+            for topic_words in cleaned_topics:
+                for word in topic_words:
+                    st.markdown(f"<div style='background-color:#f1f1f1; color:black; padding:8px 15px; border-radius:25px; display:inline-block; margin-bottom: 10px;'>{word}</div>", unsafe_allow_html=True)
+
 
         if "Word Extraction" in options:
             st.markdown('---')
             st.markdown("### Extracted Keywords:")
 
-            keywords = extract_keywords(paragraph)
+            keywords = extract_keywords(summary)
             num_keywords = len(keywords)
-            columns = st.columns(min(6, num_keywords))
+            columns = st.columns(min(4, num_keywords))
             
             for i, keyword in enumerate(keywords):
-                with columns[i % 6]:
-                    st.markdown(f"<div style='background-color:#f1f1f1; color:black; padding:8px 15px; border-radius:25px; display:inline-block; margin-bottom: 10px;'>{keyword}</div>", unsafe_allow_html=True)
+                with columns[i % 4]:
+                    st.markdown(
+                        f"<div style='background-color:#f1f1f1; color:black; padding:12px 25px; border-radius:25px; "
+                        f"display:inline-block; margin-bottom: 15px;'>{keyword}</div>",
+                        unsafe_allow_html=True
+                    )
 
 
     st.markdown('---')
