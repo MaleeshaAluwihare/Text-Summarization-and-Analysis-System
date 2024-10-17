@@ -1,12 +1,11 @@
 from transformers import BartTokenizer, BartForConditionalGeneration
-from transformers import BertTokenizer, BertForSequenceClassification
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from transformers import pipeline
+from transformers import BertTokenizer
+from transformers import AutoTokenizer
 import torch
 import os
+import time
 import streamlit as st
 from transformers import BartTokenizer, BartForConditionalGeneration, AutoModelForSequenceClassification, AutoTokenizer
-from Custom_Sentiment_model import BertForMultiTask
 from Keyword_extraction import extract_keywords
 from topicExtract import extract_topics_from_summary
 from pymongo import MongoClient
@@ -230,7 +229,7 @@ def summrization_page():
         """
         <style>
         .stApp {
-            background-color: #2e3785;
+            background-color: #000000;
         }
         </style>
         """,
@@ -300,14 +299,17 @@ def summrization_page():
     if st.button("Summarize"):
 
         lottie_placeholder = st.empty()
-        st_lottie(lottie_animation, loop=True, key="loading")
+        with lottie_placeholder.container():
+            st.markdown('<div class="centered-container">', unsafe_allow_html=True)
+            st_lottie(lottie_animation, height=150, width=300)
+            st.markdown('</div>', unsafe_allow_html=True)
+            time.sleep(25)
+        lottie_placeholder.empty()
 
         inputs = bart_tokenizer(paragraph, return_tensors="pt", max_length=512, truncation=True)
         summary_ids = selected_model.generate(inputs['input_ids'], num_beams=4, max_length=100, early_stopping=True)
         summary = bart_tokenizer.decode(summary_ids[0], skip_special_tokens=True)
         log_user_history(st.session_state.user_id,paragraph,summary)
-
-        lottie_placeholder.empty()
 
         st.markdown("### Summary:")
         st.success(summary)
