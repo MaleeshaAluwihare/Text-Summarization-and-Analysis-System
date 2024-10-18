@@ -1,10 +1,11 @@
 import streamlit as st
-import os
 import torch
+import os
 import time
-from transformers import BartTokenizer,BertTokenizer, BartForConditionalGeneration, AutoModelForSequenceClassification, AutoTokenizer
+from transformers import BartTokenizer, BertTokenizer, BartForConditionalGeneration, AutoModelForSequenceClassification, AutoTokenizer
 from Keyword_extraction import extract_keywords
 from topicExtract import extract_topics_from_summary
+from Custom_Sentiment_model import BertForMultiTask
 from pymongo import MongoClient
 import bcrypt
 import uuid
@@ -20,6 +21,7 @@ load_dotenv()
 #dialog model directory
 bart_samsum = 'BART_Finetuned'
 bart_medical = 'BART_Finetuned_Medical'
+bart_law = 'Law_model'
 sentiment = 'Sentimental_Bestmodel'
 
 # Cache the loading of models to reduce time
@@ -33,7 +35,7 @@ def load_health_model():
 
 @st.cache_resource
 def load_legal_model():
-    return BartForConditionalGeneration.from_pretrained(bart_samsum)
+    return BartForConditionalGeneration.from_pretrained(bart_law)
 
 @st.cache_resource
 def load_sentiment_model():
